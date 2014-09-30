@@ -132,9 +132,9 @@
 </span><span class='line'>    rlim_t rlim_max;  /* Hard limit (ceiling for rlim_cur) */
 </span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
 
-<p>rlimit structure is used to describe resource limit of process (not accurate actually, will explain later). rlim<em>cur is current active limit and rlim</em>max is the ceiling value of rlim_cur.</p>
+<p>rlimit structure is used to describe resource limit of process (not accurate actually, will explain later). <code>rlim_cur</code> is current active limit and <code>rlim_max</code> is the ceiling value of <code>rlim_cur</code>.</p>
 
-<p>There are various types of resource in Linux OS, hence an array rlim[RLIM<em>NLIMITS] is included (indirectly) in task</em>struct (the process descriptor). Each different type of resource limit is referenced by the array index. For example, <code>rlim[RLIMIT_NPROC]</code> is the maximum number of process and rlim[RLIMIT_NOFILE] is the maximum number of files.</p>
+<p>There are various types of resource in Linux OS, hence an array <code>rlim[RLIM_NLIMITS]</code> is included (indirectly) in <code>task_struct</code> (the process descriptor). Each different type of resource limit is referenced by the array index. For example, <code>rlim[RLIMIT_NPROC]</code> is the maximum number of process and <code>rlim[RLIMIT_NOFILE]</code> is the maximum number of files.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -143,9 +143,9 @@
 </span><span class='line'>    struct signal_struct -&gt;
 </span><span class='line'>        struct rlimit rlim[RLIM_NLIMITS]</span></code></pre></td></tr></table></div></figure>
 
-<p>Linux kernel provides setrlimit()/getrlimit() syscalls for process to write/read its rlimit of specific resource.</p>
+<p>Linux kernel provides <code>setrlimit()/getrlimit()</code> syscalls for process to write/read its rlimit of specific resource.</p>
 
-<p>Now we know the rlimit is attached to process, then where are the resource counters? In Linux, they are in user_struct (the user descriptor).</p>
+<p>Now we know the rlimit is attached to process, then where are the resource counters? In Linux, they are in <code>user_struct</code> (the user descriptor).</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -158,7 +158,7 @@
 </span><span class='line'>            process counter: atomic_t processes
 </span><span class='line'>            file counter: atomic_t files</span></code></pre></td></tr></table></div></figure>
 
-<p>So how the limitation works? Take RLIMIT_NPROC as an example, in function fork() in kernel, we have below snippet:</p>
+<p>So how the limitation works? Take <code>RLIMIT_NPROC</code> as an example, in function <code>fork()</code> in kernel, we have below snippet:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -175,7 +175,7 @@
 </span><span class='line'>                    goto bad_fork_free;
 </span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
 
-<p>The kernel compares the counter in user<em>struct with the rlimit in task</em>struct, then reject the fork request by returning EAGAIN if rlimit is exceeded, otherwise gives green light and bump up the counter. As special cases, the check is bypassed if the process has capabilities of CAP<em>SYS</em>ADMIN or CAP<em>SYS</em>RESOURCE or the owner of the process is root.</p>
+<p>The kernel compares the counter in <code>user_struct</code> with the rlimit in <code>task_struct</code>, then reject the fork request by returning <code>EAGAIN</code> if rlimit is exceeded, otherwise gives green light and bump up the counter. As special cases, the check is bypassed if the process has capabilities of <code>CAP_SYS_ADMIN</code> or <code>CAP_SYS_RESOURCE</code> or the owner of the process is root.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -188,9 +188,9 @@
 </span><span class='line'>        check processes and rlimit // see above
 </span><span class='line'>        processes ++</span></code></pre></td></tr></table></div></figure>
 
-<p>We can see from above call stack that child process will inherit the credential (user_struct as well) of parent when doing fork(), which indirectly inherits all rlimit settings as well.</p>
+<p>We can see from above call stack that child process will inherit the credential (<code>user_struct</code> as well) of parent when doing <code>fork()</code>, which indirectly inherits all rlimit settings as well.</p>
 
-<p>The rlimit is per process, while the resource counters are per user. I guess this is the root of all confusion about ulimit and rlimit. Say we have user U and his two processes P1 and P2, the RLIMIT_NPROC are 100 for P1 and 200 for P2. Then we have:</p>
+<p>The rlimit is per process, while the resource counters are per user. I guess this is the root of all confusion about ulimit and rlimit. Say we have user U and his two processes P1 and P2, the <code>RLIMIT_NPROC</code> are 100 for P1 and 200 for P2. Then we have:</p>
 
 <ul>
 <li>when counter C &lt; 100, both P1 and P2 are allowed to spawn new processes;</li>
@@ -206,14 +206,14 @@
 
 <ul>
 <li>init process: kernel decides most of rlimit values;</li>
-<li>System Daemons: inherits from init, however may change rlimit by calling setrlimit()</li>
+<li>System Daemons: inherits from init, however may change rlimit by calling <code>setrlimit()</code></li>
 <li>Login Shell: use the values defined in /etc/security/limits.conf if exist, inherits from init for the rest;</li>
 <li>Process spawned in Shell: inherits from Shell</li>
 </ul>
 
 <h3>2.1 process 1: init</h3>
 
-<p>Process 1 (init) is very special. Kernel finishes most of environment setups, and loads /sbin/init from user land. Running as a normal Linux process, /sbin/init is allowed to call setrlimit() to change the rlimit value from kernel. For example, SysVinit code sets RLIMIT_CORE to 0 at early stage.</p>
+<p>Process 1 (init) is very special. Kernel finishes most of environment setups, and loads <strong>/sbin/init</strong> from user land. Running as a normal Linux process, /sbin/init is allowed to call setrlimit() to change the rlimit value from kernel. For example, SysVinit code sets RLIMIT_CORE to 0 at early stage.</p>
 
 <p>We can read rlimit values of process init from procfs:</p>
 
@@ -251,7 +251,7 @@
 </span><span class='line'>...
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
-<p>For RLIMIT<em>NPROC, kernel fuction fork</em>init() decides its value by half of global variable max<em>threads, and max</em>threads correlates to the capacity of physical memory. So we can say RLIMIT_NPROC of init depends on hardware configuration.</p>
+<p>For <code>RLIMIT_NPROC</code>, kernel fuction <code>fork_init()</code> decides its value by half of global variable <code>max_threads</code>, and <code>max_threads</code> correlates to the capacity of physical memory. So we can say <code>RLIMIT_NPROC</code> of init depends on hardware configuration.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -260,7 +260,7 @@
 </span><span class='line'>init_task.signal-&gt;rlim[RLIMIT_NPROC].rlim_max = max_threads/2;
 </span><span class='line'>init_task.signal-&gt;rlim[RLIMIT_SIGPENDING] = init_task.signal-&gt;rlim[RLIMIT_NPROC];</span></code></pre></td></tr></table></div></figure>
 
-<p>You may notice that we may have different RLIMIT_NOFILE for RHEL5 and RHEL6. This is due to below kernel commit:</p>
+<p>You may notice that we may have different <code>RLIMIT_NOFILE</code> for RHEL5 and RHEL6. This is due to below kernel commit:</p>
 
 <blockquote>
 <p>commit 0ac1ee0bfec2a4ad118f907ce586d0dfd8db7641
@@ -294,13 +294,13 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 </span><span class='line'>Max open files            4096                 4096                 files     
 </span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
 
-<p>The soft limit of RLIMIT_NOFILE is now 4096, other than init&#39;s 1024.</p>
+<p>The soft limit of <code>RLIMIT_NOFILE</code> is now 4096, other than init&#39;s 1024.</p>
 
 <h3>2.3 Login Shell</h3>
 
-<p>In normal interactive shell spawn procedure, a process will be forked and /bin/login will be loaded for user authentication, and then PAM plugins will set up rlimit by reading values from /etc/security/limits.conf. All child processes of this shell will inherit these rlimit settings.</p>
+<p>In normal interactive shell spawn procedure, a process will be forked and <code>/bin/login</code> will be loaded for user authentication, and then PAM plugins will set up rlimit by reading values from <code>/etc/security/limits.conf</code>. All child processes of this shell will inherit these rlimit settings.</p>
 
-<p>/etc/security/limits.conf is the main configuration file for system administrator to set up default rlimit, however you need to know this method doesn&#39;t apply to all scenarios.</p>
+<p><code>/etc/security/limits.conf</code> is the main configuration file for system administrator to set up default rlimit, however you need to know this method doesn&#39;t apply to all scenarios.</p>
 
 <p>In man page of limits.conf:</p>
 
@@ -310,7 +310,7 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
   duration of the session.
 </code></pre></div></blockquote>
 
-<p>Internally, /etc/security/limits.conf is actually the configuration file of one PAM plugin pam<em>limits.so, and has nothing to do with Linux Shell. As part of login procedure, PAM invokes system-auth submodule, which in turn involves pam</em>limits.so plugin, then it&#39;s plugin&#39;s responsibility to get rlimit value from limits.conf.</p>
+<p>Internally, <code>/etc/security/limits.conf</code> is actually the configuration file of one PAM plugin <code>pam_limits.so</code>, and has nothing to do with Linux Shell. As part of login procedure, PAM invokes system-auth submodule, which in turn involves <code>pam_limits.so</code> plugin, then it&#39;s plugin&#39;s responsibility to get rlimit value from limits.conf.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -333,19 +333,19 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 
 <h2>3. how to configure rlimit</h2>
 
-<p>In order to configure rlimit, Linux OS provides system API setrlimit(), Shell provides ulimit command line, and PAM provides limits.conf interface.</p>
+<p>In order to configure rlimit, Linux OS provides system API <code>setrlimit()</code>, Shell provides ulimit command line, and PAM provides <code>limits.conf</code> interface.</p>
 
 <p>For non-root users, it&#39;s not allowed to change the hard limit or increase the soft limit, i.e., the only thing non-privileged user can do is lowering down the soft limit.</p>
 
-<p>Please note no matter how big the values provided by user is, kernel will make sure it won&#39;t exceed some global upper bound. For example, RLIMIT<em>NOFILE is not allowed to exceed the value defined in `/proc/sys/fs/nr</em>open<code>, and RLIMIT_NPROC is not allowed to exceed the value defined in</code>/proc/sys/kernel/threads-max`.</p>
+<p>Please note no matter how big the values provided by user is, kernel will make sure it won&#39;t exceed some global upper bound. For example, <code>RLIMIT_NOFILE</code> is not allowed to exceed the value defined in <code>/proc/sys/fs/nr_open</code>, and <code>RLIMIT_NPROC</code> is not allowed to exceed the value defined in <code>/proc/sys/kernel/threads-max</code>.</p>
 
-<p>In next sections we will talk about how to set up rlimit without calling setrlimit() API.</p>
+<p>In next sections we will talk about how to set up rlimit without calling <code>setrlimit()</code> API.</p>
 
 <h3>3.1 Shell</h3>
 
-<p>Let&#39;s go back to ulimit. First of all, ulimit is an internal command of Shell and runs within Shell&#39;s address space. Internally, ulimit is just a wrapper of setrlimit()/getrlimit() API, so we can say ulimit is nothing but rlimit configurator of Shell.</p>
+<p>Let&#39;s go back to ulimit. First of all, ulimit is an internal command of Shell and runs within Shell&#39;s address space. Internally, ulimit is just a wrapper of <code>setrlimit()/getrlimit()</code> API, so we can say ulimit is nothing but rlimit configurator of Shell.</p>
 
-<p>From the output of stace tool, ulimit -a actually calls getrlimit() to print out all rlimit values of Shell. Note we have to create a new shell instance to support strace because ulimit is internal command of Shell.</p>
+<p>From the output of stace tool, ulimit -a actually calls <code>getrlimit()</code> to print out all rlimit values of Shell. Note we have to create a new shell instance to support strace because ulimit is internal command of Shell.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -373,7 +373,7 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 </pre></td><td class='code'><pre><code class=''><span class='line'>$ su admin -c "ulimit -a"</span></code></pre></td></tr></table></div></figure>
 
-<p>To set rlimit values, we run &quot;ulimit -S&quot;. For example:</p>
+<p>To set rlimit values, we run <code>ulimit -S</code>. For example:</p>
 
 <p>To enable core dump with unlimited dump size:</p>
 
@@ -385,15 +385,15 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 </pre></td><td class='code'><pre><code class=''><span class='line'>$ ulimit -Sc 0</span></code></pre></td></tr></table></div></figure>
 
-<p>Obviously ulimit -S doesn&#39;t affect running processes.</p>
+<p>Obviously <code>ulimit -S</code> doesn&#39;t affect running processes.</p>
 
 <h3>3.2 Login Shell</h3>
 
-<p>For login shell, besides running ulimit explicitly, we can realize automatic setup by changing the rlimit values in /etc/security/limits.conf.</p>
+<p>For login shell, besides running ulimit explicitly, we can realize automatic setup by changing the rlimit values in <code>/etc/security/limits.conf</code>.</p>
 
 <h3>3.3 system daemons</h3>
 
-<p>If a system daemon doesn&#39;t change rlimit in its implementation (C code probably), we can add ulimit to the control script of the daemon (like /etc/init.d/syslog-ng for syslog-ng). Because the daemon itself is spawned from the control script, so it surely will inherit rlimit setting of the shell instance. Please also note this shell instance is not a login shell, hence PAM will stay out.</p>
+<p>If a system daemon doesn&#39;t change rlimit in its implementation (C code probably), we can add ulimit to the control script of the daemon (like <code>/etc/init.d/syslog-ng</code> for <code>syslog-ng</code>). Because the daemon itself is spawned from the control script, so it surely will inherit rlimit setting of the shell instance. Please also note this shell instance is not a login shell, hence PAM will stay out.</p>
 
 <blockquote>
 <p>Hint: upstart provides stanzas to configure rlimit for upstart services (not apply to legacy SysVinit daemons), see http://upstart.ubuntu.com/wiki/Stanzas#limit.</p>
@@ -405,15 +405,15 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 
 <p>The answer is probably the limits file beneath /proc/&lt;pid&gt;/. This file is read/write and root user (or anyone with sudo privilege) can write formatted string to it to change rlimit value.</p>
 
-<p>This is how root user adjusts RLIMIT_NPROC of process (pid):</p>
+<p>This is how root user adjusts <code>RLIMIT_NPROC</code> of process (pid):</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># echo -n \"Max processes=131072:131072\" &gt;/proc/\&lt;pid\&gt;/limits</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'># echo -n \"Max processes=131072:131072\" &gt;/proc/&lt;pid&gt;/limits</span></code></pre></td></tr></table></div></figure>
 
 <p>and if user is non-root with sudo privilege:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ sudo su -c "echo -n \"Max processes=131072:131072\" &gt;/proc/\&lt;pid\&gt;/limits"</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ sudo su -c "echo -n \"Max processes=131072:131072\" &gt;/proc/&lt;pid&gt;/limits"</span></code></pre></td></tr></table></div></figure>
 
 <p>I hope this article could dispel some of the confusion you may have and please bear with my poor English.</p>
 </div>
