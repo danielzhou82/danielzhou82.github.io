@@ -3,6 +3,14 @@
   
   
   <url>
+    <loc>http://danielzhou82.github.io/blog/2014/09/30/on-the-confusing-ulimit(ALI-074070N&#8211;wenzhang.zzy&#8211;2014-09-30-13,25,49)/</loc>
+    
+    <lastmod>2014-09-30T13:01:14+08:00</lastmod>
+    
+    <priority>0.8</priority>
+  </url>
+  
+  <url>
     <loc>http://danielzhou82.github.io/blog/2014/09/30/on-the-confusing-ulimit/</loc>
     
     <lastmod>2014-09-30T13:01:14+08:00</lastmod>
@@ -13,14 +21,14 @@
   
   <url>
     <loc>http://danielzhou82.github.io/blog/archives/</loc>
-    <lastmod>2014-09-30T13:20:12+08:00</lastmod>
+    <lastmod>2014-09-30T13:35:41+08:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   
   <url>
     <loc>http://danielzhou82.github.io/</loc>
-    <lastmod>2014-09-30T13:20:12+08:00</lastmod>
+    <lastmod>2014-09-30T13:35:41+08:00</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
