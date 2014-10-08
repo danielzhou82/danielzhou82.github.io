@@ -9,8 +9,8 @@
   <meta name="author" content="Daniel Zhou">
 
   
-  <meta name="description" content="1. ulimit and rlimit Literally, ulimit is per user resource limit, such like the total process number allowed to spawn, and the total number of file &hellip;">
-  
+  <meta name="description" content="internals of linux ulimit">
+  <meta name="keywords" content="ulimit, rlimit, linux, resource">
 
   <!-- http://t.co/dKP3o1e -->
   <meta name="HandheldFriendly" content="True">
@@ -31,6 +31,18 @@
 <link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
 
   
+  <script type="text/javascript">
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-55543949-1']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+      var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+      ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+  </script>
+
 
 </head>
 
@@ -58,6 +70,7 @@
 <ul class="main-navigation">
   <li><a href="/">Blog</a></li>
   <li><a href="/blog/archives">Archives</a></li>
+  <li><a href="/about">About</a></li>
 </ul>
 
 </nav>
@@ -79,6 +92,9 @@
 
 <time class='entry-date' datetime='2014-09-30T13:01:14+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>1:01 pm</span></time>
         
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://danielzhou82.github.io">Comments</a>
+        
       </p>
     
   </header>
@@ -90,70 +106,77 @@
 
 <p>The definition of rlimit:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>struct rlimit {
-</span><span class='line'>    rlim_t rlim_cur;  /* Soft limit */
-</span><span class='line'>    rlim_t rlim_max;  /* Hard limit (ceiling for rlim_cur) */
-</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="k">struct</span> <span class="n">rlimit</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kt">rlim_t</span> <span class="n">rlim_cur</span><span class="p">;</span>  <span class="cm">/* Soft limit */</span>
+</span><span class='line'>    <span class="kt">rlim_t</span> <span class="n">rlim_max</span><span class="p">;</span>  <span class="cm">/* Hard limit (ceiling for rlim_cur) */</span>
+</span><span class='line'><span class="p">};</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>rlimit structure is used to describe resource limit of process (not accurate actually, will explain later). <code>rlim_cur</code> is current active limit and <code>rlim_max</code> is the ceiling value of <code>rlim_cur</code>.</p>
 
+<!--more-->
+
 <p>There are various types of resource in Linux OS, hence an array <code>rlim[RLIM_NLIMITS]</code> is included (indirectly) in <code>task_struct</code> (the process descriptor). Each different type of resource limit is referenced by the array index. For example, <code>rlim[RLIMIT_NPROC]</code> is the maximum number of process and <code>rlim[RLIMIT_NOFILE]</code> is the maximum number of files.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>struct task_struct -&gt;
-</span><span class='line'>    struct signal_struct -&gt;
-</span><span class='line'>        struct rlimit rlim[RLIM_NLIMITS]</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="k">struct</span> <span class="n">task_struct</span> <span class="o">-&gt;</span>
+</span><span class='line'>    <span class="k">struct</span> <span class="n">signal_struct</span> <span class="o">-&gt;</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">rlimit</span> <span class="n">rlim</span><span class="p">[</span><span class="n">RLIM_NLIMITS</span><span class="p">]</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>Linux kernel provides <code>setrlimit()/getrlimit()</code> syscalls for process to write/read its rlimit of specific resource.</p>
 
 <p>Now we know the rlimit is attached to process, then where are the resource counters? In Linux, they are in <code>user_struct</code> (the user descriptor).</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
 <span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>struct task_struct -&gt;
-</span><span class='line'>    struct cred *real_cred -&gt;
-</span><span class='line'>        struct user_struct *user -&gt; 
-</span><span class='line'>            process counter: atomic_t processes
-</span><span class='line'>            file counter: atomic_t files</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="k">struct</span> <span class="n">task_struct</span> <span class="o">-&gt;</span>
+</span><span class='line'>    <span class="k">struct</span> <span class="n">cred</span> <span class="o">*</span><span class="n">real_cred</span> <span class="o">-&gt;</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">user_struct</span> <span class="o">*</span><span class="n">user</span> <span class="o">-&gt;</span>
+</span><span class='line'>            <span class="n">process</span> <span class="nl">counter</span><span class="p">:</span> <span class="kt">atomic_t</span> <span class="n">processes</span>
+</span><span class='line'>            <span class="n">file</span> <span class="nl">counter</span><span class="p">:</span> <span class="kt">atomic_t</span> <span class="n">files</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>So how the limitation works? Take <code>RLIMIT_NPROC</code> as an example, in function <code>fork()</code> in kernel, we have below snippet:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
 <span class='line-number'>5</span>
 <span class='line-number'>6</span>
 <span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>    retval = -EAGAIN;
-</span><span class='line'>    if (atomic_read(&p-&gt;real_cred-&gt;user-&gt;processes) &gt;=
-</span><span class='line'>                    p-&gt;signal-&gt;rlim[RLIMIT_NPROC].rlim_cur) {
-</span><span class='line'>            if (!capable(CAP_SYS_ADMIN) && !capable(CAP_SYS_RESOURCE) &&
-</span><span class='line'>                p-&gt;real_cred-&gt;user != INIT_USER)
-</span><span class='line'>                    goto bad_fork_free;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'>    <span class="n">retval</span> <span class="o">=</span> <span class="o">-</span><span class="n">EAGAIN</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">atomic_read</span><span class="p">(</span><span class="o">&amp;</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">real_cred</span><span class="o">-&gt;</span><span class="n">user</span><span class="o">-&gt;</span><span class="n">processes</span><span class="p">)</span> <span class="o">&gt;=</span>
+</span><span class='line'>                    <span class="n">p</span><span class="o">-&gt;</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">rlim</span><span class="p">[</span><span class="n">RLIMIT_NPROC</span><span class="p">].</span><span class="n">rlim_cur</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">capable</span><span class="p">(</span><span class="n">CAP_SYS_ADMIN</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">capable</span><span class="p">(</span><span class="n">CAP_SYS_RESOURCE</span><span class="p">)</span> <span class="o">&amp;&amp;</span>
+</span><span class='line'>                <span class="n">p</span><span class="o">-&gt;</span><span class="n">real_cred</span><span class="o">-&gt;</span><span class="n">user</span> <span class="o">!=</span> <span class="n">INIT_USER</span><span class="p">)</span>
+</span><span class='line'>                    <span class="k">goto</span> <span class="n">bad_fork_free</span><span class="p">;</span>
+</span><span class='line'>    <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>The kernel compares the counter in <code>user_struct</code> with the rlimit in <code>task_struct</code>, then reject the fork request by returning <code>EAGAIN</code> if rlimit is exceeded, otherwise gives green light and bump up the counter. As special cases, the check is bypassed if the process has capabilities of <code>CAP_SYS_ADMIN</code> or <code>CAP_SYS_RESOURCE</code> or the owner of the process is root.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
 <span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>do_fork()
-</span><span class='line'>    copy_process()
-</span><span class='line'>        copy_creds() // inherit parent's credential
-</span><span class='line'>        check processes and rlimit // see above
-</span><span class='line'>        processes ++</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="n">do_fork</span><span class="p">()</span>
+</span><span class='line'>    <span class="n">copy_process</span><span class="p">()</span>
+</span><span class='line'>        <span class="n">copy_creds</span><span class="p">()</span> <span class="c1">// inherit parent&#39;s credential</span>
+</span><span class='line'>        <span class="n">check</span> <span class="n">processes</span> <span class="n">and</span> <span class="n">rlimit</span> <span class="c1">// see above</span>
+</span><span class='line'>        <span class="n">processes</span> <span class="o">++</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>We can see from above call stack that child process will inherit the credential (<code>user_struct</code> as well) of parent when doing <code>fork()</code>, which indirectly inherits all rlimit settings as well.</p>
 
@@ -184,22 +207,23 @@
 
 <p>We can read rlimit values of process init from procfs:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
 <span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># cat /proc/1/limits
-</span><span class='line'>...
-</span><span class='line'>Max processes             193115               193115               processes 
-</span><span class='line'>Max open files            1024                 4096                 files     
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="cp"># cat /proc/1/limits</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="n">Max</span> <span class="n">processes</span>             <span class="mi">193115</span>               <span class="mi">193115</span>               <span class="n">processes</span>
+</span><span class='line'><span class="n">Max</span> <span class="n">open</span> <span class="n">files</span>            <span class="mi">1024</span>                 <span class="mi">4096</span>                 <span class="n">files</span>
+</span><span class='line'><span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>So why the <code>RLIMIT_NOFILE</code> of init is 1024? Actually it&#39;s hardcoded by kernel.</p>
 
 <p>For your reference, see <code>INIT_RLIMITS</code> macro in kernel source, which initializes rlim array for process init:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
@@ -208,24 +232,26 @@
 <span class='line-number'>7</span>
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#define INR_OPEN_CUR 1024
-</span><span class='line'>#define INR_OPEN_MAX 4096
-</span><span class='line'>#define INIT_RLIMITS                                                    \
-</span><span class='line'>{                                                                       \
-</span><span class='line'>...
-</span><span class='line'>        [RLIMIT_NPROC]          = {              0,              0 },   \
-</span><span class='line'>        [RLIMIT_NOFILE]         = {   INR_OPEN_CUR,   INR_OPEN_MAX },   \
-</span><span class='line'>...
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="cp">#define INR_OPEN_CUR 1024</span>
+</span><span class='line'><span class="cp">#define INR_OPEN_MAX 4096</span>
+</span><span class='line'><span class="cp">#define INIT_RLIMITS                                                    \</span>
+</span><span class='line'><span class="cp">{                                                                       \</span>
+</span><span class='line'><span class="cp">...</span>
+</span><span class='line'>        <span class="p">[</span><span class="n">RLIMIT_NPROC</span><span class="p">]</span>          <span class="o">=</span> <span class="p">{</span>              <span class="mi">0</span><span class="p">,</span>              <span class="mi">0</span> <span class="p">},</span>   \
+</span><span class='line'>        <span class="p">[</span><span class="n">RLIMIT_NOFILE</span><span class="p">]</span>         <span class="o">=</span> <span class="p">{</span>   <span class="n">INR_OPEN_CUR</span><span class="p">,</span>   <span class="n">INR_OPEN_MAX</span> <span class="p">},</span>   \
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>For <code>RLIMIT_NPROC</code>, kernel fuction <code>fork_init()</code> decides its value by half of global variable <code>max_threads</code>, and <code>max_threads</code> correlates to the capacity of physical memory. So we can say <code>RLIMIT_NPROC</code> of init depends on hardware configuration.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>init_task.signal-&gt;rlim[RLIMIT_NPROC].rlim_cur = max_threads/2;
-</span><span class='line'>init_task.signal-&gt;rlim[RLIMIT_NPROC].rlim_max = max_threads/2;
-</span><span class='line'>init_task.signal-&gt;rlim[RLIMIT_SIGPENDING] = init_task.signal-&gt;rlim[RLIMIT_NPROC];</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="n">init_task</span><span class="p">.</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">rlim</span><span class="p">[</span><span class="n">RLIMIT_NPROC</span><span class="p">].</span><span class="n">rlim_cur</span> <span class="o">=</span> <span class="n">max_threads</span><span class="o">/</span><span class="mi">2</span><span class="p">;</span>
+</span><span class='line'><span class="n">init_task</span><span class="p">.</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">rlim</span><span class="p">[</span><span class="n">RLIMIT_NPROC</span><span class="p">].</span><span class="n">rlim_max</span> <span class="o">=</span> <span class="n">max_threads</span><span class="o">/</span><span class="mi">2</span><span class="p">;</span>
+</span><span class='line'><span class="n">init_task</span><span class="p">.</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">rlim</span><span class="p">[</span><span class="n">RLIMIT_SIGPENDING</span><span class="p">]</span> <span class="o">=</span> <span class="n">init_task</span><span class="p">.</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">rlim</span><span class="p">[</span><span class="n">RLIMIT_NPROC</span><span class="p">];</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>You may notice that we may have different <code>RLIMIT_NOFILE</code> for RHEL5 and RHEL6. This is due to below kernel commit:</p>
 
@@ -241,25 +267,27 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 
 <p>System daemons are brought up by init according to predefined configurations, in a non-interactive way. Hence they normally inherits rlimit settings from init directly. However system daemons may call setrlimit() to change rlimit values, depending on the requirement. Take syslog-ng as an example, we can see setrlimit() invocation in C source code:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>limit.rlimit_cur = 4096;
-</span><span class='line'>setrlimit(RLIMIT_NOFILE, &limit);</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="n">limit</span><span class="p">.</span><span class="n">rlimit_cur</span> <span class="o">=</span> <span class="mi">4096</span><span class="p">;</span>
+</span><span class='line'><span class="n">setrlimit</span><span class="p">(</span><span class="n">RLIMIT_NOFILE</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">limit</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>Then the rlimit of syslog-ng looks like:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
 <span class='line-number'>5</span>
 <span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># cat /proc/3268/limits 
-</span><span class='line'>Limit                     Soft Limit           Hard Limit           Units     
-</span><span class='line'>...
-</span><span class='line'>Max processes             193115               193115               processes 
-</span><span class='line'>Max open files            4096                 4096                 files     
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="cp"># cat /proc/3268/limits </span>
+</span><span class='line'><span class="n">Limit</span>                     <span class="n">Soft</span> <span class="n">Limit</span>           <span class="n">Hard</span> <span class="n">Limit</span>           <span class="n">Units</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="n">Max</span> <span class="n">processes</span>             <span class="mi">193115</span>               <span class="mi">193115</span>               <span class="n">processes</span>
+</span><span class='line'><span class="n">Max</span> <span class="n">open</span> <span class="n">files</span>            <span class="mi">4096</span>                 <span class="mi">4096</span>                 <span class="n">files</span>
+</span><span class='line'><span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>The soft limit of <code>RLIMIT_NOFILE</code> is now 4096, other than init&#39;s 1024.</p>
 
@@ -279,7 +307,7 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 
 <p>Internally, <code>/etc/security/limits.conf</code> is actually the configuration file of one PAM plugin <code>pam_limits.so</code>, and has nothing to do with Linux Shell. As part of login procedure, PAM invokes system-auth submodule, which in turn involves <code>pam_limits.so</code> plugin, then it&#39;s plugin&#39;s responsibility to get rlimit value from limits.conf.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
@@ -287,14 +315,15 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 <span class='line-number'>6</span>
 <span class='line-number'>7</span>
 <span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># cat /etc/pam.d/login 
-</span><span class='line'>...
-</span><span class='line'>session    include      system-auth
-</span><span class='line'>...
-</span><span class='line'># cat /etc/pam.d/system-auth
-</span><span class='line'>...
-</span><span class='line'>session required pam_limits.so
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="cp"># cat /etc/pam.d/login </span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="n">session</span>    <span class="n">include</span>      <span class="n">system</span><span class="o">-</span><span class="n">auth</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="cp"># cat /etc/pam.d/system-auth</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="n">session</span> <span class="n">required</span> <span class="n">pam_limits</span><span class="p">.</span><span class="n">so</span>
+</span><span class='line'><span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>Please note PAM is user oriented, so it has no effect on system daemons, i.e., the rlimits of processes that are already running stay intact after limits.conf changed.</p>
 
@@ -314,7 +343,7 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 
 <p>From the output of stace tool, ulimit -a actually calls <code>getrlimit()</code> to print out all rlimit values of Shell. Note we have to create a new shell instance to support strace because ulimit is internal command of Shell.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
@@ -324,33 +353,37 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># strace bash -c "ulimit -a"
-</span><span class='line'>...
-</span><span class='line'>getrlimit(RLIMIT_NOFILE, {rlim_cur=65535, rlim_max=65535}) = 0
-</span><span class='line'>write(1, "open files            "..., 43open files                 (-n) 65535
-</span><span class='line'>) = 43
-</span><span class='line'>...
-</span><span class='line'>getrlimit(RLIMIT_NPROC, {rlim_cur=20*1024, rlim_max=20*1024}) = 0
-</span><span class='line'>write(1, "max user processes      "..., 43max user processes         (-u) 20480
-</span><span class='line'>) = 43
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="cp"># strace bash -c &quot;ulimit -a&quot;</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="n">getrlimit</span><span class="p">(</span><span class="n">RLIMIT_NOFILE</span><span class="p">,</span> <span class="p">{</span><span class="n">rlim_cur</span><span class="o">=</span><span class="mi">65535</span><span class="p">,</span> <span class="n">rlim_max</span><span class="o">=</span><span class="mi">65535</span><span class="p">})</span> <span class="o">=</span> <span class="mi">0</span>
+</span><span class='line'><span class="n">write</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s">&quot;open files            &quot;</span><span class="p">...,</span> <span class="mi">43</span><span class="n">open</span> <span class="n">files</span>                 <span class="p">(</span><span class="o">-</span><span class="n">n</span><span class="p">)</span> <span class="mi">65535</span>
+</span><span class='line'><span class="p">)</span> <span class="o">=</span> <span class="mi">43</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="n">getrlimit</span><span class="p">(</span><span class="n">RLIMIT_NPROC</span><span class="p">,</span> <span class="p">{</span><span class="n">rlim_cur</span><span class="o">=</span><span class="mi">20</span><span class="o">*</span><span class="mi">1024</span><span class="p">,</span> <span class="n">rlim_max</span><span class="o">=</span><span class="mi">20</span><span class="o">*</span><span class="mi">1024</span><span class="p">})</span> <span class="o">=</span> <span class="mi">0</span>
+</span><span class='line'><span class="n">write</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s">&quot;max user processes      &quot;</span><span class="p">...,</span> <span class="mi">43</span><span class="n">max</span> <span class="n">user</span> <span class="n">processes</span>         <span class="p">(</span><span class="o">-</span><span class="n">u</span><span class="p">)</span> <span class="mi">20480</span>
+</span><span class='line'><span class="p">)</span> <span class="o">=</span> <span class="mi">43</span>
+</span><span class='line'><span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>How to check other users&#39; ulimit settings? We have a trick here: create a shell instance under other user&#39;s name and run ulimit in the new shell.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ su admin -c "ulimit -a"</span></code></pre></td></tr></table></div></figure>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="err">$</span> <span class="n">su</span> <span class="n">admin</span> <span class="o">-</span><span class="n">c</span> <span class="s">&quot;ulimit -a&quot;</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>To set rlimit values, we run <code>ulimit -S</code>. For example:</p>
 
 <p>To enable core dump with unlimited dump size:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ ulimit -Sc unlimited</span></code></pre></td></tr></table></div></figure>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="err">$</span> <span class="n">ulimit</span> <span class="o">-</span><span class="n">Sc</span> <span class="n">unlimited</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>and disable core dump:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ ulimit -Sc 0</span></code></pre></td></tr></table></div></figure>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="err">$</span> <span class="n">ulimit</span> <span class="o">-</span><span class="n">Sc</span> <span class="mi">0</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>Obviously <code>ulimit -S</code> doesn&#39;t affect running processes.</p>
 
@@ -374,13 +407,15 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 
 <p>This is how root user adjusts <code>RLIMIT_NPROC</code> of process (pid):</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># echo -n \"Max processes=131072:131072\" &gt;/proc/&lt;pid&gt;/limits</span></code></pre></td></tr></table></div></figure>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="cp"># echo -n \&quot;Max processes=131072:131072\&quot; &gt;/proc/&lt;pid&gt;/limits</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>and if user is non-root with sudo privilege:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ sudo su -c "echo -n \"Max processes=131072:131072\" &gt;/proc/&lt;pid&gt;/limits"</span></code></pre></td></tr></table></div></figure>
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='cpp'><span class='line'><span class="err">$</span> <span class="n">sudo</span> <span class="n">su</span> <span class="o">-</span><span class="n">c</span> <span class="s">&quot;echo -n </span><span class="se">\&quot;</span><span class="s">Max processes=131072:131072</span><span class="se">\&quot;</span><span class="s"> &gt;/proc/&lt;pid&gt;/limits&quot;</span>
+</span></code></pre></td></tr></table></div></figure>
 
 <p>I hope this article could dispel some of the confusion you may have and please bear with my poor English.</p>
 </div>
@@ -400,6 +435,12 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 
 <time class='entry-date' datetime='2014-09-30T13:01:14+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>1:01 pm</span></time>
       
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/linux/'>linux</a>
+  
+</span>
 
 
     </p>
@@ -421,6 +462,12 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
     </p>
   </footer>
 </article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
 
 </div>
 
@@ -458,6 +505,22 @@ Date:   Tue May 24 17:13:05 2011 -0700</p>
 
 </footer>
   
+
+<script type="text/javascript">
+      var disqus_shortname = 'danielzhou82';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://danielzhou82.github.io/blog/2014/09/30/on-the-confusing-ulimit/';
+        var disqus_url = 'http://danielzhou82.github.io/blog/2014/09/30/on-the-confusing-ulimit/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
 
 
 
